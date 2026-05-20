@@ -2,6 +2,12 @@ export const config = {
   runtime: 'edge',
 }
 
+declare const process: {
+  env: {
+    DEEPSEEK_API_KEY?: string
+  }
+}
+
 interface CharacterCard {
   name: string
   role: string
