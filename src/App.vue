@@ -63,6 +63,26 @@ function createNovel(): void {
   layout.value.activeNovelId = id
 }
 
+function renameNovel(id: string, title: string): void {
+  const nextTitle = title.trim() || '未命名小说'
+
+  novels.value = novels.value.map((novel) => (novel.id === id ? { ...novel, title: nextTitle } : novel))
+}
+
+function deleteNovel(id: string): void {
+  if (novels.value.length <= 1) return
+
+  const currentIndex = novels.value.findIndex((novel) => novel.id === id)
+  const remainingNovels = novels.value.filter((novel) => novel.id !== id)
+
+  novels.value = remainingNovels
+
+  if (layout.value.activeNovelId === id) {
+    const nextIndex = Math.min(Math.max(currentIndex, 0), remainingNovels.length - 1)
+    layout.value.activeNovelId = remainingNovels[nextIndex].id
+  }
+}
+
 function updateActiveNovel(patch: Partial<Omit<NovelProject, 'id'>>): void {
   novels.value = novels.value.map((novel) =>
     novel.id === layout.value.activeNovelId ? { ...novel, ...patch } : novel,
@@ -87,6 +107,8 @@ function updateActiveEditorTab(tab: EditorTab): void {
         :collapsed="layout.sidebarCollapsed"
         @select-novel="selectNovel"
         @create-novel="createNovel"
+        @rename-novel="renameNovel"
+        @delete-novel="deleteNovel"
         @toggle-sidebar="toggleSidebar"
       />
 

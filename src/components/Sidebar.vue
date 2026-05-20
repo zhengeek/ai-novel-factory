@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, ChevronsLeft, ChevronsRight, Factory, Plus } from 'lucide-vue-next'
+import { BookOpen, ChevronsLeft, ChevronsRight, Factory, Plus, Trash2 } from 'lucide-vue-next'
 import type { NovelProject } from '../types/novel'
 
 defineProps<{
@@ -11,6 +11,8 @@ defineProps<{
 const emit = defineEmits<{
   selectNovel: [id: string]
   createNovel: []
+  renameNovel: [id: string, title: string]
+  deleteNovel: [id: string]
   toggleSidebar: []
 }>()
 </script>
@@ -43,22 +45,40 @@ const emit = defineEmits<{
     </div>
 
     <nav class="flex-1 overflow-y-auto px-3 py-4">
-      <button
+      <div
         v-for="novel in novels"
         :key="novel.id"
-        class="mb-2 flex w-full items-center gap-3 border px-3 py-3 text-left text-sm transition"
+        class="group mb-2 flex w-full items-center gap-2 border px-3 py-3 text-left text-sm transition"
         :class="
           novel.id === activeNovelId
             ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-100'
             : 'border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-900 hover:text-slate-100'
         "
-        type="button"
         :title="novel.title"
         @click="emit('selectNovel', novel.id)"
       >
         <BookOpen class="h-4 w-4 shrink-0" />
-        <span v-if="!collapsed" class="line-clamp-2 leading-5">{{ novel.title }}</span>
-      </button>
+        <input
+          v-if="!collapsed"
+          class="min-w-0 flex-1 bg-transparent text-sm leading-5 outline-none"
+          :class="novel.id === activeNovelId ? 'text-cyan-100' : 'text-slate-400 group-hover:text-slate-100'"
+          :value="novel.title"
+          aria-label="小说标题"
+          @click.stop="emit('selectNovel', novel.id)"
+          @change="emit('renameNovel', novel.id, ($event.target as HTMLInputElement).value)"
+          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        />
+        <button
+          v-if="!collapsed"
+          class="grid h-7 w-7 shrink-0 place-items-center border border-transparent text-slate-600 opacity-0 transition group-hover:opacity-100 hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-100 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent disabled:hover:text-slate-600"
+          type="button"
+          title="删除小说"
+          :disabled="novels.length <= 1"
+          @click.stop="emit('deleteNovel', novel.id)"
+        >
+          <Trash2 class="h-3.5 w-3.5" />
+        </button>
+      </div>
     </nav>
 
     <div class="border-t border-slate-800 p-3">
