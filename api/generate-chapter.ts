@@ -12,7 +12,8 @@ declare const process: {
 
 interface CharacterCard {
   name: string
-  role: string
+  gender: string
+  background: string
   personality: string
   goal: string
   secret: string
@@ -35,6 +36,8 @@ interface GenerateChapterRequest {
   chapterId?: string
   title: string
   globalSetting: string
+  worldbuilding: string
+  library: string
   chapterOutline: string
   characters: CharacterCard[]
   timelineEvents: TimelineEvent[]
@@ -86,7 +89,7 @@ export default async function handler(request: Request): Promise<Response> {
           {
             role: 'system',
             content:
-              '你是一名擅长中文网络小说连载的正文写作助手。请根据设定和大纲输出可直接使用的章节正文，保持节奏强、画面清晰、钩子明确。不要解释创作过程。',
+              '你是一名擅长中文网络小说连载的正文写作助手。请根据设定、大纲、人物卡、世界观和资料库输出可直接使用的章节正文，保持节奏强、画面清晰、钩子明确。不要解释创作过程。',
           },
           {
             role: 'user',
@@ -98,19 +101,16 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (!deepseekResponse.ok || !deepseekResponse.body) {
       const errorText = await deepseekResponse.text()
+      const errorMessage = errorText || `DeepSeek 请求失败，状态码 ${deepseekResponse.status}。`
+
       void writeGenerationRun(payload, request, {
         status: 'error',
         outputPreview: '',
         usage: null,
-        errorMessage: errorText || `DeepSeek 请求失败，状态码 ${deepseekResponse.status}。`,
+        errorMessage,
       })
 
-      return jsonResponse(
-        {
-          error: errorText || `DeepSeek 请求失败，状态码 ${deepseekResponse.status}。`,
-        },
-        deepseekResponse.status,
-      )
+      return jsonResponse({ error: errorMessage }, deepseekResponse.status)
     }
 
     return new Response(streamAndCaptureUsage(deepseekResponse.body, payload, request), {
@@ -141,11 +141,15 @@ function streamAndCaptureUsage(
 
       if (done) {
         buffer += decoder.decode()
-        parseStreamBuffer(buffer, (content) => {
-          output += content
-        }, (nextUsage) => {
-          usage = nextUsage
-        })
+        parseStreamBuffer(
+          buffer,
+          (content) => {
+            output += content
+          },
+          (nextUsage) => {
+            usage = nextUsage
+          },
+        )
 
         controller.close()
         void writeGenerationRun(payload, request, {
@@ -217,7 +221,7 @@ function parseStreamLine(
     if (content) onContent(content)
     if (payload.usage) onUsage(payload.usage)
   } catch {
-    // Ignore malformed SSE lines while preserving the raw stream for the client.
+    // Malformed SSE lines are ignored for logging, while the raw stream is still passed to the client.
   }
 }
 
@@ -292,11 +296,13 @@ function buildInputSummary(payload: GenerateChapterRequest): string {
   return [
     `小说：${payload.title}`,
     `设定字数：${payload.globalSetting.length}`,
+    `世界观字数：${payload.worldbuilding.length}`,
+    `资料库字数：${payload.library.length}`,
     `大纲字数：${payload.chapterOutline.length}`,
     `人物卡：${payload.characters.length}`,
-    `时间轴：${payload.timelineEvents.length}`,
+    `时间线：${payload.timelineEvents.length}`,
     `灵感消息：${payload.inspirationMessages.length}`,
-  ].join('｜')
+  ].join(' | ')
 }
 
 function buildPrompt(payload: GenerateChapterRequest): string {
@@ -306,13 +312,19 @@ function buildPrompt(payload: GenerateChapterRequest): string {
     '【全局设定】',
     payload.globalSetting || '暂无',
     '',
+    '【世界观】',
+    payload.worldbuilding || '暂无',
+    '',
+    '【资料库】',
+    payload.library || '暂无',
+    '',
     '【本章大纲】',
     payload.chapterOutline || '暂无',
     '',
     '【人物卡】',
     formatCharacters(payload.characters),
     '',
-    '【时间轴】',
+    '【时间线】',
     formatTimeline(payload.timelineEvents),
     '',
     '【灵感记录】',
@@ -320,8 +332,9 @@ function buildPrompt(payload: GenerateChapterRequest): string {
     '',
     '请写出本章正文。要求：',
     '1. 直接输出正文，不要写标题、提纲、解释或项目符号。',
-    '2. 优先遵守本章大纲，同时利用人物卡和时间轴保持连续性。',
-    '3. 结尾保留适合网文连载的悬念或推进力。',
+    '2. 优先遵守本章大纲，同时利用世界观、资料库、人物卡和时间线保持连续性。',
+    '3. 人物行为必须符合人物卡中的性格、目标、背景和秘密。',
+    '4. 结尾保留适合网文连载的悬念或推进力。',
   ].join('\n')
 }
 
@@ -331,9 +344,11 @@ function formatCharacters(characters: CharacterCard[]): string {
   return characters
     .map(
       (character) =>
-        `- ${character.name || '未命名角色'}｜身份：${character.role || '未填'}｜性格：${
-          character.personality || '未填'
-        }｜目标：${character.goal || '未填'}｜秘密：${character.secret || '未填'}`,
+        `- 姓名：${character.name || '未命名角色'}｜性别：${character.gender || '未填'}｜身份与背景：${
+          character.background || '未填'
+        }｜性格与行为模式：${character.personality || '未填'}｜目标与当前欲望：${
+          character.goal || '未填'
+        }｜秘密：${character.secret || '未填'}`,
     )
     .join('\n')
 }

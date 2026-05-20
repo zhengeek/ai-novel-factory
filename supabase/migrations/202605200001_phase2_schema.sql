@@ -6,11 +6,17 @@ create table if not exists public.novels (
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null,
   global_setting text not null default '',
+  worldbuilding text not null default '',
+  library text not null default '',
   sort_order integer not null default 0,
   archived boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.novels
+  add column if not exists worldbuilding text not null default '',
+  add column if not exists library text not null default '';
 
 create table if not exists public.chapters (
   id uuid primary key default gen_random_uuid(),
@@ -30,7 +36,8 @@ create table if not exists public.characters (
   user_id uuid not null references auth.users(id) on delete cascade,
   novel_id uuid not null references public.novels(id) on delete cascade,
   name text not null default '未命名角色',
-  role text not null default '',
+  gender text not null default '',
+  background text not null default '',
   personality text not null default '',
   goal text not null default '',
   secret text not null default '',
@@ -38,6 +45,23 @@ create table if not exists public.characters (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.characters
+  add column if not exists gender text not null default '',
+  add column if not exists background text not null default '';
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'characters'
+      and column_name = 'role'
+  ) then
+    execute 'update public.characters set background = role where background = '''' and role <> ''''';
+  end if;
+end $$;
 
 create table if not exists public.timeline_events (
   id uuid primary key default gen_random_uuid(),
@@ -124,90 +148,111 @@ alter table public.timeline_events enable row level security;
 alter table public.inspiration_messages enable row level security;
 alter table public.generation_runs enable row level security;
 
+drop policy if exists "Users can read own novels" on public.novels;
 create policy "Users can read own novels"
   on public.novels for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own novels" on public.novels;
 create policy "Users can insert own novels"
   on public.novels for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own novels" on public.novels;
 create policy "Users can update own novels"
   on public.novels for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own novels" on public.novels;
 create policy "Users can delete own novels"
   on public.novels for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read own chapters" on public.chapters;
 create policy "Users can read own chapters"
   on public.chapters for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own chapters" on public.chapters;
 create policy "Users can insert own chapters"
   on public.chapters for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own chapters" on public.chapters;
 create policy "Users can update own chapters"
   on public.chapters for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own chapters" on public.chapters;
 create policy "Users can delete own chapters"
   on public.chapters for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read own characters" on public.characters;
 create policy "Users can read own characters"
   on public.characters for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own characters" on public.characters;
 create policy "Users can insert own characters"
   on public.characters for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own characters" on public.characters;
 create policy "Users can update own characters"
   on public.characters for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own characters" on public.characters;
 create policy "Users can delete own characters"
   on public.characters for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read own timeline events" on public.timeline_events;
 create policy "Users can read own timeline events"
   on public.timeline_events for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own timeline events" on public.timeline_events;
 create policy "Users can insert own timeline events"
   on public.timeline_events for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own timeline events" on public.timeline_events;
 create policy "Users can update own timeline events"
   on public.timeline_events for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own timeline events" on public.timeline_events;
 create policy "Users can delete own timeline events"
   on public.timeline_events for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read own inspiration messages" on public.inspiration_messages;
 create policy "Users can read own inspiration messages"
   on public.inspiration_messages for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own inspiration messages" on public.inspiration_messages;
 create policy "Users can insert own inspiration messages"
   on public.inspiration_messages for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own inspiration messages" on public.inspiration_messages;
 create policy "Users can delete own inspiration messages"
   on public.inspiration_messages for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read own generation runs" on public.generation_runs;
 create policy "Users can read own generation runs"
   on public.generation_runs for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own generation runs" on public.generation_runs;
 create policy "Users can insert own generation runs"
   on public.generation_runs for insert
   with check (auth.uid() = user_id);

@@ -2,16 +2,31 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ContextPanel from './ContextPanel.vue'
 import EditorPanel from './EditorPanel.vue'
-import type { EditorTab, NovelProject } from '../types/novel'
+import type { Chapter, CharacterCard, EditorTab, NovelProject, TimelineEvent } from '../types/novel'
 
 const props = defineProps<{
   novel: NovelProject
+  activeChapter: Chapter
   contextPaneWidth: number
   activeEditorTab: EditorTab
+  authToken: string
 }>()
 
 const emit = defineEmits<{
-  updateNovel: [patch: Partial<Omit<NovelProject, 'id'>>]
+  updateNovel: [patch: Partial<Pick<NovelProject, 'globalSetting' | 'worldbuilding' | 'library'>>]
+  updateChapter: [patch: Partial<Pick<Chapter, 'title' | 'outline' | 'content' | 'status'>>]
+  createChapter: []
+  selectChapter: [id: string]
+  deleteChapter: [id: string]
+  reorderChapters: [sourceId: string, targetId: string]
+  addCharacter: []
+  updateCharacter: [id: string, patch: Partial<Omit<CharacterCard, 'id'>>]
+  deleteCharacter: [id: string]
+  addTimelineEvent: []
+  updateTimelineEvent: [id: string, patch: Partial<Omit<TimelineEvent, 'id'>>]
+  deleteTimelineEvent: [id: string]
+  addInspirationMessage: [content: string]
+  deleteInspirationMessage: [id: string]
   updateContextPaneWidth: [width: number]
   updateActiveEditorTab: [tab: EditorTab]
 }>()
@@ -23,16 +38,12 @@ const generationError = ref('')
 const editorPaneWidth = computed(() => `${100 - props.contextPaneWidth}%`)
 const contextPaneBasis = computed(() => `${props.contextPaneWidth}%`)
 
-function updateNovel(patch: Partial<Omit<NovelProject, 'id'>>): void {
-  emit('updateNovel', patch)
-}
-
 async function generateChapter(): Promise<void> {
   if (isGenerating.value) return
 
   isGenerating.value = true
   generationError.value = ''
-  emit('updateNovel', { chapterDraft: '' })
+  emit('updateChapter', { content: '' })
 
   let nextDraft = ''
 
@@ -40,12 +51,17 @@ async function generateChapter(): Promise<void> {
     const response = await fetch('/api/generate-chapter', {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${props.authToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        novelId: props.novel.id,
+        chapterId: props.activeChapter.id,
         title: props.novel.title,
         globalSetting: props.novel.globalSetting,
-        chapterOutline: props.novel.chapterOutline,
+        worldbuilding: props.novel.worldbuilding,
+        library: props.novel.library,
+        chapterOutline: props.activeChapter.outline,
         characters: props.novel.characters,
         timelineEvents: props.novel.timelineEvents,
         inspirationMessages: props.novel.inspirationMessages,
@@ -80,8 +96,13 @@ async function generateChapter(): Promise<void> {
         if (!content) continue
 
         nextDraft += content
-        emit('updateNovel', { chapterDraft: nextDraft })
+        emit('updateChapter', { content: nextDraft })
       }
+    }
+
+    if (buffer) {
+      const content = parseStreamLine(buffer)
+      if (content) emit('updateChapter', { content: nextDraft + content })
     }
   } catch (error) {
     generationError.value = error instanceof Error ? error.message : '生成失败，请稍后重试。'
@@ -153,10 +174,16 @@ onBeforeUnmount(() => {
   <main class="flex h-full min-w-0 flex-1 bg-slate-900">
     <ContextPanel
       :novel="novel"
+      :active-chapter="activeChapter"
       :is-generating="isGenerating"
       :generation-error="generationError"
       :style="{ flexBasis: contextPaneBasis }"
-      @update-novel="updateNovel"
+      @update-novel="emit('updateNovel', $event)"
+      @update-chapter="emit('updateChapter', $event)"
+      @create-chapter="emit('createChapter')"
+      @select-chapter="emit('selectChapter', $event)"
+      @delete-chapter="emit('deleteChapter', $event)"
+      @reorder-chapters="(sourceId, targetId) => emit('reorderChapters', sourceId, targetId)"
       @generate="generateChapter"
     />
 
@@ -173,10 +200,20 @@ onBeforeUnmount(() => {
 
     <EditorPanel
       :novel="novel"
+      :active-chapter="activeChapter"
       :active-tab="activeEditorTab"
       :style="{ flexBasis: editorPaneWidth }"
-      @update-novel="updateNovel"
+      @update-novel="emit('updateNovel', $event)"
+      @update-chapter="emit('updateChapter', $event)"
       @update-active-tab="emit('updateActiveEditorTab', $event)"
+      @add-character="emit('addCharacter')"
+      @update-character="(id, patch) => emit('updateCharacter', id, patch)"
+      @delete-character="emit('deleteCharacter', $event)"
+      @add-timeline-event="emit('addTimelineEvent')"
+      @update-timeline-event="(id, patch) => emit('updateTimelineEvent', id, patch)"
+      @delete-timeline-event="emit('deleteTimelineEvent', $event)"
+      @add-inspiration-message="emit('addInspirationMessage', $event)"
+      @delete-inspiration-message="emit('deleteInspirationMessage', $event)"
     />
   </main>
 </template>
