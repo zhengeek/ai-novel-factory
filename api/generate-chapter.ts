@@ -5,6 +5,8 @@ export const config = {
 declare const process: {
   env: {
     DEEPSEEK_API_KEY?: string
+    SUPABASE_URL?: string
+    SUPABASE_SERVICE_ROLE_KEY?: string
   }
 }
 
@@ -29,6 +31,8 @@ interface InspirationMessage {
 }
 
 interface GenerateChapterRequest {
+  novelId?: string
+  chapterId?: string
   title: string
   globalSetting: string
   chapterOutline: string
@@ -37,7 +41,16 @@ interface GenerateChapterRequest {
   inspirationMessages: InspirationMessage[]
 }
 
+interface DeepSeekUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+}
+
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
+const DEEPSEEK_MODEL = 'deepseek-v4-flash'
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
@@ -60,8 +73,11 @@ export default async function handler(request: Request): Promise<Response> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'deepseek-v4-flash',
+        model: DEEPSEEK_MODEL,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
         thinking: {
           type: 'disabled',
         },
@@ -82,6 +98,13 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (!deepseekResponse.ok || !deepseekResponse.body) {
       const errorText = await deepseekResponse.text()
+      void writeGenerationRun(payload, request, {
+        status: 'error',
+        outputPreview: '',
+        usage: null,
+        errorMessage: errorText || `DeepSeek 请求失败，状态码 ${deepseekResponse.status}。`,
+      })
+
       return jsonResponse(
         {
           error: errorText || `DeepSeek 请求失败，状态码 ${deepseekResponse.status}。`,
@@ -90,7 +113,7 @@ export default async function handler(request: Request): Promise<Response> {
       )
     }
 
-    return new Response(deepseekResponse.body, {
+    return new Response(streamAndCaptureUsage(deepseekResponse.body, payload, request), {
       headers: {
         'Cache-Control': 'no-cache, no-transform',
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -99,6 +122,181 @@ export default async function handler(request: Request): Promise<Response> {
   } catch {
     return jsonResponse({ error: '请求格式错误或服务端生成失败。' }, 400)
   }
+}
+
+function streamAndCaptureUsage(
+  body: ReadableStream<Uint8Array>,
+  payload: GenerateChapterRequest,
+  request: Request,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let output = ''
+  let usage: DeepSeekUsage | null = null
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        buffer += decoder.decode()
+        parseStreamBuffer(buffer, (content) => {
+          output += content
+        }, (nextUsage) => {
+          usage = nextUsage
+        })
+
+        controller.close()
+        void writeGenerationRun(payload, request, {
+          status: 'success',
+          outputPreview: output.slice(0, 500),
+          usage,
+          errorMessage: null,
+        })
+        return
+      }
+
+      controller.enqueue(value)
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        parseStreamLine(
+          line,
+          (content) => {
+            output += content
+          },
+          (nextUsage) => {
+            usage = nextUsage
+          },
+        )
+      }
+    },
+    async cancel() {
+      await reader.cancel()
+    },
+  })
+}
+
+function parseStreamBuffer(
+  buffer: string,
+  onContent: (content: string) => void,
+  onUsage: (usage: DeepSeekUsage) => void,
+): void {
+  for (const line of buffer.split('\n')) {
+    parseStreamLine(line, onContent, onUsage)
+  }
+}
+
+function parseStreamLine(
+  line: string,
+  onContent: (content: string) => void,
+  onUsage: (usage: DeepSeekUsage) => void,
+): void {
+  if (!line.startsWith('data:')) return
+
+  const data = line.replace(/^data:\s*/, '')
+
+  if (!data || data === '[DONE]') return
+
+  try {
+    const payload = JSON.parse(data) as {
+      choices?: Array<{
+        delta?: {
+          content?: string
+        }
+      }>
+      usage?: DeepSeekUsage
+    }
+
+    const content = payload.choices?.[0]?.delta?.content
+
+    if (content) onContent(content)
+    if (payload.usage) onUsage(payload.usage)
+  } catch {
+    // Ignore malformed SSE lines while preserving the raw stream for the client.
+  }
+}
+
+async function writeGenerationRun(
+  payload: GenerateChapterRequest,
+  request: Request,
+  run: {
+    status: 'success' | 'error'
+    outputPreview: string
+    usage: DeepSeekUsage | null
+    errorMessage: string | null
+  },
+): Promise<void> {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const authHeader = request.headers.get('Authorization')
+
+    if (!supabaseUrl || !serviceRoleKey || !authHeader || !payload.novelId) return
+
+    const user = await fetchAuthenticatedUser(supabaseUrl, serviceRoleKey, authHeader)
+
+    if (!user?.id) return
+
+    await fetch(`${supabaseUrl}/rest/v1/generation_runs`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        user_id: user.id,
+        novel_id: payload.novelId,
+        chapter_id: payload.chapterId || null,
+        model: DEEPSEEK_MODEL,
+        status: run.status,
+        input_summary: buildInputSummary(payload),
+        output_preview: run.outputPreview,
+        prompt_tokens: run.usage?.prompt_tokens ?? 0,
+        completion_tokens: run.usage?.completion_tokens ?? 0,
+        total_tokens: run.usage?.total_tokens ?? 0,
+        prompt_cache_hit_tokens: run.usage?.prompt_cache_hit_tokens ?? 0,
+        prompt_cache_miss_tokens: run.usage?.prompt_cache_miss_tokens ?? 0,
+        error_message: run.errorMessage,
+      }),
+    })
+  } catch {
+    // Generation logging is best-effort and must never break streaming output.
+  }
+}
+
+async function fetchAuthenticatedUser(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  authHeader: string,
+): Promise<{ id: string } | null> {
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: authHeader,
+    },
+  })
+
+  if (!response.ok) return null
+
+  return (await response.json()) as { id: string }
+}
+
+function buildInputSummary(payload: GenerateChapterRequest): string {
+  return [
+    `小说：${payload.title}`,
+    `设定字数：${payload.globalSetting.length}`,
+    `大纲字数：${payload.chapterOutline.length}`,
+    `人物卡：${payload.characters.length}`,
+    `时间轴：${payload.timelineEvents.length}`,
+    `灵感消息：${payload.inspirationMessages.length}`,
+  ].join('｜')
 }
 
 function buildPrompt(payload: GenerateChapterRequest): string {

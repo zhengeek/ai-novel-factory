@@ -30,6 +30,15 @@ DEEPSEEK_API_KEY=你的 DeepSeek API Key
 
 前端只调用 `/api/generate-chapter`，DeepSeek Key 只在 Vercel 服务端函数中读取。
 
+Phase 2 接入 Supabase 后，服务端生成记录还需要：
+
+```txt
+SUPABASE_URL=你的 Supabase Project URL
+SUPABASE_SERVICE_ROLE_KEY=你的 Supabase service_role key
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` 只能放在 Vercel 服务端环境变量中，不能暴露到前端。
+
 ## 自定义域名
 
 在 Vercel 项目 Settings -> Domains 添加：
