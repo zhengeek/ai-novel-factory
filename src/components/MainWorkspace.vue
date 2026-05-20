@@ -2,20 +2,23 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ContextPanel from './ContextPanel.vue'
 import EditorPanel from './EditorPanel.vue'
-import type { NovelProject } from '../types/novel'
+import type { EditorTab, NovelProject } from '../types/novel'
 
 const props = defineProps<{
   novel: NovelProject
   contextPaneWidth: number
+  activeEditorTab: EditorTab
 }>()
 
 const emit = defineEmits<{
   updateNovel: [patch: Partial<Omit<NovelProject, 'id'>>]
   updateContextPaneWidth: [width: number]
+  updateActiveEditorTab: [tab: EditorTab]
 }>()
 
 const isGenerating = ref(false)
 const isDragging = ref(false)
+const generationError = ref('')
 
 const editorPaneWidth = computed(() => `${100 - props.contextPaneWidth}%`)
 const contextPaneBasis = computed(() => `${props.contextPaneWidth}%`)
@@ -24,36 +27,98 @@ function updateNovel(patch: Partial<Omit<NovelProject, 'id'>>): void {
   emit('updateNovel', patch)
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
 async function generateChapter(): Promise<void> {
   if (isGenerating.value) return
 
   isGenerating.value = true
+  generationError.value = ''
   emit('updateNovel', { chapterDraft: '' })
-
-  const generatedText = [
-    `《${props.novel.title}》`,
-    '',
-    '雨声像一层低频噪音，贴着窗沿缓慢滚动。',
-    '他把全局设定和本章大纲重新扫了一遍，确认每一个冲突点都已经压进了这一章的开场。',
-    '屏幕右下角的时间跳了一下，像某种倒计时终于开始。',
-    '',
-    '这里是 Phase 1 的模拟正文输出。后续接入 DeepSeek 时，将在 generateChapter 中替换为真实的流式 API 调用。',
-  ].join('\n')
 
   let nextDraft = ''
 
-  // TODO Phase 2: call DeepSeek through a server-side proxy or Supabase Edge Function.
-  for (const char of generatedText) {
-    nextDraft += char
-    emit('updateNovel', { chapterDraft: nextDraft })
-    await sleep(12)
-  }
+  try {
+    const response = await fetch('/api/generate-chapter', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: props.novel.title,
+        globalSetting: props.novel.globalSetting,
+        chapterOutline: props.novel.chapterOutline,
+        characters: props.novel.characters,
+        timelineEvents: props.novel.timelineEvents,
+        inspirationMessages: props.novel.inspirationMessages,
+      }),
+    })
 
-  isGenerating.value = false
+    if (!response.ok) {
+      const message = await readErrorMessage(response)
+      throw new Error(message)
+    }
+
+    if (!response.body) {
+      throw new Error('DeepSeek 没有返回可读取的流。')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const content = parseStreamLine(line)
+
+        if (!content) continue
+
+        nextDraft += content
+        emit('updateNovel', { chapterDraft: nextDraft })
+      }
+    }
+  } catch (error) {
+    generationError.value = error instanceof Error ? error.message : '生成失败，请稍后重试。'
+  } finally {
+    isGenerating.value = false
+  }
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { error?: string }
+    return payload.error ?? '生成失败，请检查服务端配置。'
+  } catch {
+    return '生成失败，请检查服务端配置。'
+  }
+}
+
+function parseStreamLine(line: string): string {
+  if (!line.startsWith('data:')) return ''
+
+  const data = line.replace(/^data:\s*/, '')
+
+  if (!data || data === '[DONE]') return ''
+
+  try {
+    const payload = JSON.parse(data) as {
+      choices?: Array<{
+        delta?: {
+          content?: string
+        }
+      }>
+    }
+
+    return payload.choices?.[0]?.delta?.content ?? ''
+  } catch {
+    return ''
+  }
 }
 
 function handlePointerMove(event: PointerEvent): void {
@@ -89,6 +154,7 @@ onBeforeUnmount(() => {
     <ContextPanel
       :novel="novel"
       :is-generating="isGenerating"
+      :generation-error="generationError"
       :style="{ flexBasis: contextPaneBasis }"
       @update-novel="updateNovel"
       @generate="generateChapter"
@@ -107,8 +173,10 @@ onBeforeUnmount(() => {
 
     <EditorPanel
       :novel="novel"
+      :active-tab="activeEditorTab"
       :style="{ flexBasis: editorPaneWidth }"
       @update-novel="updateNovel"
+      @update-active-tab="emit('updateActiveEditorTab', $event)"
     />
   </main>
 </template>

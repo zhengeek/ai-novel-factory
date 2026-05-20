@@ -22,6 +22,14 @@ npm run build
 - Output Directory: `dist`
 - Production Branch: `main`
 
+生成正文需要在 Vercel 项目环境变量中配置：
+
+```txt
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+```
+
+前端只调用 `/api/generate-chapter`，DeepSeek Key 只在 Vercel 服务端函数中读取。
+
 ## 自定义域名
 
 在 Vercel 项目 Settings -> Domains 添加：

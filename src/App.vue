@@ -9,7 +9,7 @@ import {
   saveLayoutState,
   saveNovels,
 } from './services/novelStorage'
-import type { LayoutState, NovelProject } from './types/novel'
+import type { EditorTab, LayoutState, NovelProject } from './types/novel'
 
 const novels = ref<NovelProject[]>(loadNovels())
 const layout = ref<LayoutState>(loadLayoutState())
@@ -54,6 +54,9 @@ function createNovel(): void {
     globalSetting: '',
     chapterOutline: '',
     chapterDraft: '',
+    characters: [],
+    timelineEvents: [],
+    inspirationMessages: [],
   }
 
   novels.value = [...novels.value, nextNovel]
@@ -68,6 +71,10 @@ function updateActiveNovel(patch: Partial<Omit<NovelProject, 'id'>>): void {
 
 function updateContextPaneWidth(width: number): void {
   layout.value.contextPaneWidth = Math.min(38, Math.max(18, width))
+}
+
+function updateActiveEditorTab(tab: EditorTab): void {
+  layout.value.activeEditorTab = tab
 }
 </script>
 
@@ -87,8 +94,10 @@ function updateContextPaneWidth(width: number): void {
         v-if="activeNovel"
         :novel="activeNovel"
         :context-pane-width="layout.contextPaneWidth"
+        :active-editor-tab="layout.activeEditorTab"
         @update-novel="updateActiveNovel"
         @update-context-pane-width="updateContextPaneWidth"
+        @update-active-editor-tab="updateActiveEditorTab"
       />
     </div>
   </div>

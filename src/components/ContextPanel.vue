@@ -5,6 +5,7 @@ import type { NovelProject } from '../types/novel'
 defineProps<{
   novel: NovelProject
   isGenerating: boolean
+  generationError: string
 }>()
 
 const emit = defineEmits<{
@@ -69,6 +70,10 @@ const emit = defineEmits<{
           <Zap class="h-4 w-4" />
           <span>{{ isGenerating ? '生成中...' : '生成本章正文' }}</span>
         </button>
+
+        <p v-if="generationError" class="mt-3 border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs leading-5 text-rose-100">
+          {{ generationError }}
+        </p>
       </div>
     </div>
   </section>
