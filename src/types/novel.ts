@@ -1,4 +1,39 @@
-export type EditorTab = 'draft' | 'worldbuilding' | 'library' | 'characters' | 'timeline' | 'inspiration'
+export type EditorTab =
+  | 'draft'
+  | 'worldbuilding'
+  | 'library'
+  | 'preferences'
+  | 'memory'
+  | 'settings'
+  | 'characters'
+  | 'timeline'
+  | 'inspiration'
+
+export type PreferenceKind = 'like' | 'avoid' | 'style'
+export type MemoryReviewMode = 'after_adopt' | 'inbox'
+export type CandidateProvider = 'deepseek' | 'openai'
+export type MemoryKind = 'character' | 'location' | 'organization' | 'item_or_ability' | 'foreshadowing'
+export type MemoryCandidateStatus = 'pending' | 'accepted' | 'rejected'
+export type MemoryItemStatus = 'active' | 'archived'
+
+export interface UserSettings {
+  id: string
+  memoryReviewMode: MemoryReviewMode
+  memoryInjectionEnabled: boolean
+  candidateProvider: CandidateProvider
+  openaiCandidateModel: string
+  embeddingModel: string
+  embeddingDimensions: number
+}
+
+export interface PreferenceNote {
+  id: string
+  novelId: string
+  kind: PreferenceKind
+  content: string
+  sortOrder: number
+  createdAt: string
+}
 
 export interface CharacterCard {
   id: string
@@ -26,6 +61,47 @@ export interface InspirationMessage {
   createdAt: string
 }
 
+export interface ChapterSummary {
+  id: string
+  novelId: string
+  chapterId: string
+  summary: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemoryCandidate {
+  id: string
+  novelId: string
+  chapterId: string
+  kind: MemoryKind
+  title: string
+  summary: string
+  detail: string
+  tags: string[]
+  sourceExcerpt: string
+  importance: number
+  status: MemoryCandidateStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemoryItem {
+  id: string
+  novelId: string
+  kind: MemoryKind
+  title: string
+  summary: string
+  detail: string
+  tags: string[]
+  sourceChapterId: string | null
+  sourceExcerpt: string
+  importance: number
+  status: MemoryItemStatus
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Chapter {
   id: string
   novelId: string
@@ -46,6 +122,10 @@ export interface NovelProject {
   archived: boolean
   chapters: Chapter[]
   characters: CharacterCard[]
+  preferenceNotes: PreferenceNote[]
+  chapterSummaries: ChapterSummary[]
+  memoryCandidates: MemoryCandidate[]
+  memoryItems: MemoryItem[]
   timelineEvents: TimelineEvent[]
   inspirationMessages: InspirationMessage[]
 }

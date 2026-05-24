@@ -1,3 +1,25 @@
+import type {
+  CandidateProvider,
+  MemoryCandidateStatus,
+  MemoryItemStatus,
+  MemoryKind,
+  MemoryReviewMode,
+  PreferenceKind,
+} from './novel'
+
+export interface UserSettingsRow {
+  id: string
+  user_id: string
+  memory_review_mode: MemoryReviewMode
+  memory_injection_enabled: boolean
+  candidate_provider: CandidateProvider
+  openai_candidate_model: string
+  embedding_model: string
+  embedding_dimensions: number
+  created_at: string
+  updated_at: string
+}
+
 export interface NovelRow {
   id: string
   user_id: string
@@ -39,6 +61,17 @@ export interface CharacterRow {
   updated_at: string
 }
 
+export interface PreferenceNoteRow {
+  id: string
+  user_id: string
+  novel_id: string
+  kind: PreferenceKind
+  content: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export interface TimelineEventRow {
   id: string
   user_id: string
@@ -59,4 +92,48 @@ export interface InspirationMessageRow {
   author: 'user' | 'assistant'
   content: string
   created_at: string
+}
+
+export interface ChapterSummaryRow {
+  id: string
+  user_id: string
+  novel_id: string
+  chapter_id: string
+  summary: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MemoryCandidateRow {
+  id: string
+  user_id: string
+  novel_id: string
+  chapter_id: string
+  kind: MemoryKind
+  title: string
+  summary: string
+  detail: string
+  tags: string[]
+  source_excerpt: string
+  importance: number
+  status: MemoryCandidateStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface MemoryItemRow {
+  id: string
+  user_id: string
+  novel_id: string
+  kind: MemoryKind
+  title: string
+  summary: string
+  detail: string
+  tags: string[]
+  source_chapter_id: string | null
+  source_excerpt: string
+  importance: number
+  status: MemoryItemStatus
+  created_at: string
+  updated_at: string
 }

@@ -1,4 +1,4 @@
-import type { CharacterCard, InspirationMessage, LayoutState, NovelProject, TimelineEvent } from '../types/novel'
+import type { CharacterCard, InspirationMessage, LayoutState, NovelProject, PreferenceNote, TimelineEvent } from '../types/novel'
 
 const NOVELS_KEY = 'ai-novel-factory:novels'
 const LAYOUT_KEY = 'ai-novel-factory:layout'
@@ -36,6 +36,10 @@ export const defaultNovels: NovelProject[] = [
         secret: '他的直播账号曾经收到过来自未来的私信。',
       },
     ],
+    preferenceNotes: [],
+    chapterSummaries: [],
+    memoryCandidates: [],
+    memoryItems: [],
     timelineEvents: [
       {
         id: 'timeline-livestream-1',
@@ -79,6 +83,10 @@ export const defaultNovels: NovelProject[] = [
         secret: '他每次违背反派套路，世界线都会短暂回滚。',
       },
     ],
+    preferenceNotes: [],
+    chapterSummaries: [],
+    memoryCandidates: [],
+    memoryItems: [],
     timelineEvents: [
       {
         id: 'timeline-villain-1',
@@ -169,6 +177,17 @@ function normalizeNovel(novel: NovelProject): NovelProject {
             },
           ],
     characters: normalizeArray<CharacterCard>(novel.characters).map(normalizeCharacter),
+    preferenceNotes: normalizeArray<PreferenceNote>(novel.preferenceNotes).map((note, index) => ({
+      ...note,
+      novelId: note.novelId ?? novel.id,
+      kind: note.kind ?? 'avoid',
+      content: note.content ?? '',
+      sortOrder: note.sortOrder ?? index,
+      createdAt: note.createdAt ?? new Date().toISOString(),
+    })),
+    chapterSummaries: normalizeArray(novel.chapterSummaries),
+    memoryCandidates: normalizeArray(novel.memoryCandidates),
+    memoryItems: normalizeArray(novel.memoryItems),
     timelineEvents: normalizeArray<TimelineEvent>(novel.timelineEvents),
     inspirationMessages: normalizeArray<InspirationMessage>(novel.inspirationMessages).map((message) => ({
       ...message,

@@ -1,12 +1,51 @@
 import { supabase } from './supabaseClient'
-import type { Chapter, CharacterCard, InspirationMessage, NovelProject, TimelineEvent } from '../types/novel'
-import type { ChapterRow, CharacterRow, InspirationMessageRow, NovelRow, TimelineEventRow } from '../types/supabase'
+import type {
+  CandidateProvider,
+  Chapter,
+  ChapterSummary,
+  CharacterCard,
+  InspirationMessage,
+  MemoryCandidate,
+  MemoryCandidateStatus,
+  MemoryItem,
+  MemoryItemStatus,
+  MemoryKind,
+  MemoryReviewMode,
+  NovelProject,
+  PreferenceKind,
+  PreferenceNote,
+  TimelineEvent,
+  UserSettings,
+} from '../types/novel'
+import type {
+  ChapterRow,
+  ChapterSummaryRow,
+  CharacterRow,
+  InspirationMessageRow,
+  MemoryCandidateRow,
+  MemoryItemRow,
+  NovelRow,
+  PreferenceNoteRow,
+  TimelineEventRow,
+  UserSettingsRow,
+} from '../types/supabase'
 
 export interface CloudWorkspace {
   novels: NovelProject[]
+  userSettings: UserSettings
+}
+
+export const defaultUserSettings: Omit<UserSettings, 'id'> = {
+  memoryReviewMode: 'after_adopt',
+  memoryInjectionEnabled: true,
+  candidateProvider: 'deepseek',
+  openaiCandidateModel: 'gpt-4.1-mini',
+  embeddingModel: 'text-embedding-3-small',
+  embeddingDimensions: 1536,
 }
 
 export async function loadWorkspace(): Promise<CloudWorkspace> {
+  const user = await getCurrentUser()
   const { data: novelRows, error: novelsError } = await supabase
     .from('novels')
     .select('*')
@@ -16,9 +55,62 @@ export async function loadWorkspace(): Promise<CloudWorkspace> {
 
   if (novelsError) throw novelsError
 
-  const novels = await Promise.all((novelRows ?? []).map(loadNovelDetails))
+  const [userSettings, novels] = await Promise.all([
+    loadUserSettings(user.id),
+    Promise.all((novelRows ?? []).map(loadNovelDetails)),
+  ])
 
-  return { novels }
+  return { novels, userSettings }
+}
+
+async function getCurrentUser(): Promise<{ id: string }> {
+  const { data, error } = await supabase.auth.getUser()
+
+  if (error || !data.user) throw error ?? new Error('用户未登录。')
+
+  return { id: data.user.id }
+}
+
+export async function loadUserSettings(userId: string): Promise<UserSettings> {
+  const { data, error } = await supabase.from('user_settings').select('*').eq('user_id', userId).maybeSingle()
+
+  if (error) throw error
+  if (data) return mapUserSettings(data)
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('user_settings')
+    .insert({
+      user_id: userId,
+      memory_review_mode: defaultUserSettings.memoryReviewMode,
+      memory_injection_enabled: defaultUserSettings.memoryInjectionEnabled,
+      candidate_provider: defaultUserSettings.candidateProvider,
+      openai_candidate_model: defaultUserSettings.openaiCandidateModel,
+      embedding_model: defaultUserSettings.embeddingModel,
+      embedding_dimensions: defaultUserSettings.embeddingDimensions,
+    })
+    .select('*')
+    .single()
+
+  if (insertError) throw insertError
+
+  return mapUserSettings(inserted)
+}
+
+export async function updateUserSettings(id: string, patch: Partial<Omit<UserSettings, 'id'>>): Promise<void> {
+  const nextPatch: Partial<UserSettingsRow> = {}
+
+  if (patch.memoryReviewMode !== undefined) nextPatch.memory_review_mode = patch.memoryReviewMode
+  if (patch.memoryInjectionEnabled !== undefined) nextPatch.memory_injection_enabled = patch.memoryInjectionEnabled
+  if (patch.candidateProvider !== undefined) nextPatch.candidate_provider = patch.candidateProvider
+  if (patch.openaiCandidateModel !== undefined) nextPatch.openai_candidate_model = patch.openaiCandidateModel
+  if (patch.embeddingModel !== undefined) nextPatch.embedding_model = patch.embeddingModel
+  if (patch.embeddingDimensions !== undefined) nextPatch.embedding_dimensions = patch.embeddingDimensions
+
+  if (Object.keys(nextPatch).length === 0) return
+
+  const { error } = await supabase.from('user_settings').update(nextPatch).eq('id', id)
+
+  if (error) throw error
 }
 
 export async function createNovel(userId: string, title: string, sortOrder: number): Promise<NovelProject> {
@@ -40,6 +132,10 @@ export async function createNovel(userId: string, title: string, sortOrder: numb
     ...mapNovel(data),
     chapters: [chapter],
     characters: [],
+    preferenceNotes: [],
+    chapterSummaries: [],
+    memoryCandidates: [],
+    memoryItems: [],
     timelineEvents: [],
     inspirationMessages: [],
   }
@@ -160,6 +256,98 @@ export async function deleteCharacter(id: string): Promise<void> {
   if (error) throw error
 }
 
+export async function createPreferenceNote(
+  userId: string,
+  novelId: string,
+  kind: PreferenceKind,
+  content: string,
+  sortOrder: number,
+): Promise<PreferenceNote> {
+  const { data, error } = await supabase
+    .from('preference_notes')
+    .insert({
+      user_id: userId,
+      novel_id: novelId,
+      kind,
+      content,
+      sort_order: sortOrder,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+
+  return mapPreferenceNote(data)
+}
+
+export async function updatePreferenceNote(
+  id: string,
+  patch: Partial<Pick<PreferenceNote, 'kind' | 'content' | 'sortOrder'>>,
+): Promise<void> {
+  const nextPatch: Partial<PreferenceNoteRow> = {}
+
+  if (patch.kind !== undefined) nextPatch.kind = patch.kind
+  if (patch.content !== undefined) nextPatch.content = patch.content
+  if (patch.sortOrder !== undefined) nextPatch.sort_order = patch.sortOrder
+
+  if (Object.keys(nextPatch).length === 0) return
+
+  const { error } = await supabase.from('preference_notes').update(nextPatch).eq('id', id)
+
+  if (error) throw error
+}
+
+export async function deletePreferenceNote(id: string): Promise<void> {
+  const { error } = await supabase.from('preference_notes').delete().eq('id', id)
+
+  if (error) throw error
+}
+
+export async function updateMemoryCandidate(
+  id: string,
+  patch: Partial<
+    Pick<MemoryCandidate, 'kind' | 'title' | 'summary' | 'detail' | 'tags' | 'sourceExcerpt' | 'importance' | 'status'>
+  >,
+): Promise<void> {
+  const nextPatch: Partial<MemoryCandidateRow> = {}
+
+  if (patch.kind !== undefined) nextPatch.kind = patch.kind
+  if (patch.title !== undefined) nextPatch.title = patch.title
+  if (patch.summary !== undefined) nextPatch.summary = patch.summary
+  if (patch.detail !== undefined) nextPatch.detail = patch.detail
+  if (patch.tags !== undefined) nextPatch.tags = patch.tags
+  if (patch.sourceExcerpt !== undefined) nextPatch.source_excerpt = patch.sourceExcerpt
+  if (patch.importance !== undefined) nextPatch.importance = patch.importance
+  if (patch.status !== undefined) nextPatch.status = patch.status
+
+  if (Object.keys(nextPatch).length === 0) return
+
+  const { error } = await supabase.from('memory_candidates').update(nextPatch).eq('id', id)
+
+  if (error) throw error
+}
+
+export async function updateMemoryItem(
+  id: string,
+  patch: Partial<Pick<MemoryItem, 'kind' | 'title' | 'summary' | 'detail' | 'tags' | 'importance' | 'status'>>,
+): Promise<void> {
+  const nextPatch: Partial<MemoryItemRow> = {}
+
+  if (patch.kind !== undefined) nextPatch.kind = patch.kind
+  if (patch.title !== undefined) nextPatch.title = patch.title
+  if (patch.summary !== undefined) nextPatch.summary = patch.summary
+  if (patch.detail !== undefined) nextPatch.detail = patch.detail
+  if (patch.tags !== undefined) nextPatch.tags = patch.tags
+  if (patch.importance !== undefined) nextPatch.importance = patch.importance
+  if (patch.status !== undefined) nextPatch.status = patch.status
+
+  if (Object.keys(nextPatch).length === 0) return
+
+  const { error } = await supabase.from('memory_items').update(nextPatch).eq('id', id)
+
+  if (error) throw error
+}
+
 export async function createTimelineEvent(userId: string, novelId: string, sortOrder: number): Promise<TimelineEvent> {
   const { data, error } = await supabase
     .from('timeline_events')
@@ -270,6 +458,7 @@ export async function importLocalNovels(
     )
 
     const characters = await importCharacters(userId, novelRow.id, novel.characters)
+    const preferenceNotes = await importPreferenceNotes(userId, novelRow.id, novel.preferenceNotes)
     const timelineEvents = await importTimelineEvents(userId, novelRow.id, novel.timelineEvents)
     const inspirationMessages = await importInspirationMessages(userId, novelRow.id, novel.inspirationMessages)
 
@@ -277,6 +466,10 @@ export async function importLocalNovels(
       ...mapNovel(novelRow),
       chapters,
       characters,
+      preferenceNotes,
+      chapterSummaries: [],
+      memoryCandidates: [],
+      memoryItems: [],
       timelineEvents,
       inspirationMessages,
     })
@@ -286,9 +479,22 @@ export async function importLocalNovels(
 }
 
 async function loadNovelDetails(row: NovelRow): Promise<NovelProject> {
-  const [chapters, characters, timelineEvents, inspirationMessages] = await Promise.all([
+  const [
+    chapters,
+    characters,
+    preferenceNotes,
+    chapterSummaries,
+    memoryCandidates,
+    memoryItems,
+    timelineEvents,
+    inspirationMessages,
+  ] = await Promise.all([
     loadChapters(row.id),
     loadCharacters(row.id),
+    loadPreferenceNotes(row.id),
+    loadChapterSummaries(row.id),
+    loadMemoryCandidates(row.id),
+    loadMemoryItems(row.id),
     loadTimelineEvents(row.id),
     loadInspirationMessages(row.id),
   ])
@@ -297,6 +503,10 @@ async function loadNovelDetails(row: NovelRow): Promise<NovelProject> {
     ...mapNovel(row),
     chapters,
     characters,
+    preferenceNotes,
+    chapterSummaries,
+    memoryCandidates,
+    memoryItems,
     timelineEvents,
     inspirationMessages,
   }
@@ -326,6 +536,56 @@ async function loadCharacters(novelId: string): Promise<CharacterCard[]> {
   if (error) throw error
 
   return (data ?? []).map(mapCharacter)
+}
+
+async function loadPreferenceNotes(novelId: string): Promise<PreferenceNote[]> {
+  const { data, error } = await supabase
+    .from('preference_notes')
+    .select('*')
+    .eq('novel_id', novelId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).map(mapPreferenceNote)
+}
+
+async function loadChapterSummaries(novelId: string): Promise<ChapterSummary[]> {
+  const { data, error } = await supabase
+    .from('chapter_summaries')
+    .select('*')
+    .eq('novel_id', novelId)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).map(mapChapterSummary)
+}
+
+async function loadMemoryCandidates(novelId: string): Promise<MemoryCandidate[]> {
+  const { data, error } = await supabase
+    .from('memory_candidates')
+    .select('*')
+    .eq('novel_id', novelId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map(mapMemoryCandidate)
+}
+
+async function loadMemoryItems(novelId: string): Promise<MemoryItem[]> {
+  const { data, error } = await supabase
+    .from('memory_items')
+    .select('id,user_id,novel_id,kind,title,summary,detail,tags,source_chapter_id,source_excerpt,importance,status,created_at,updated_at')
+    .eq('novel_id', novelId)
+    .order('importance', { ascending: false })
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map(mapMemoryItem)
 }
 
 async function loadTimelineEvents(novelId: string): Promise<TimelineEvent[]> {
@@ -378,11 +638,33 @@ async function importCharacters(userId: string, novelId: string, characters: Cha
   return (data ?? []).map(mapCharacter)
 }
 
-async function importTimelineEvents(
+async function importPreferenceNotes(
   userId: string,
   novelId: string,
-  events: TimelineEvent[],
-): Promise<TimelineEvent[]> {
+  notes: PreferenceNote[],
+): Promise<PreferenceNote[]> {
+  if (!notes.length) return []
+
+  const { data, error } = await supabase
+    .from('preference_notes')
+    .insert(
+      notes.map((note, index) => ({
+        user_id: userId,
+        novel_id: novelId,
+        kind: note.kind,
+        content: note.content,
+        sort_order: note.sortOrder ?? index,
+        created_at: note.createdAt,
+      })),
+    )
+    .select('*')
+
+  if (error) throw error
+
+  return (data ?? []).map(mapPreferenceNote)
+}
+
+async function importTimelineEvents(userId: string, novelId: string, events: TimelineEvent[]): Promise<TimelineEvent[]> {
   if (!events.length) return []
 
   const { data, error } = await supabase
@@ -430,13 +712,30 @@ async function importInspirationMessages(
   return (data ?? []).map(mapInspirationMessage)
 }
 
-function mapNovel(row: NovelRow): Omit<NovelProject, 'chapters' | 'characters' | 'timelineEvents' | 'inspirationMessages'> {
+function mapUserSettings(row: UserSettingsRow): UserSettings {
+  return {
+    id: row.id,
+    memoryReviewMode: row.memory_review_mode as MemoryReviewMode,
+    memoryInjectionEnabled: row.memory_injection_enabled,
+    candidateProvider: row.candidate_provider as CandidateProvider,
+    openaiCandidateModel: row.openai_candidate_model,
+    embeddingModel: row.embedding_model,
+    embeddingDimensions: row.embedding_dimensions,
+  }
+}
+
+function mapNovel(
+  row: NovelRow,
+): Omit<
+  NovelProject,
+  'chapters' | 'characters' | 'preferenceNotes' | 'chapterSummaries' | 'memoryCandidates' | 'memoryItems' | 'timelineEvents' | 'inspirationMessages'
+> {
   return {
     id: row.id,
     title: row.title,
-    globalSetting: row.global_setting,
-    worldbuilding: row.worldbuilding,
-    library: row.library,
+    globalSetting: row.global_setting ?? '',
+    worldbuilding: row.worldbuilding ?? '',
+    library: row.library ?? '',
     sortOrder: row.sort_order,
     archived: row.archived,
   }
@@ -458,11 +757,69 @@ function mapCharacter(row: CharacterRow): CharacterCard {
   return {
     id: row.id,
     name: row.name,
-    gender: row.gender,
-    background: row.background,
-    personality: row.personality,
-    goal: row.goal,
-    secret: row.secret,
+    gender: row.gender ?? '',
+    background: row.background ?? '',
+    personality: row.personality ?? '',
+    goal: row.goal ?? '',
+    secret: row.secret ?? '',
+  }
+}
+
+function mapPreferenceNote(row: PreferenceNoteRow): PreferenceNote {
+  return {
+    id: row.id,
+    novelId: row.novel_id,
+    kind: row.kind,
+    content: row.content,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+  }
+}
+
+export function mapChapterSummary(row: ChapterSummaryRow): ChapterSummary {
+  return {
+    id: row.id,
+    novelId: row.novel_id,
+    chapterId: row.chapter_id,
+    summary: row.summary,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMemoryCandidate(row: MemoryCandidateRow): MemoryCandidate {
+  return {
+    id: row.id,
+    novelId: row.novel_id,
+    chapterId: row.chapter_id,
+    kind: row.kind as MemoryKind,
+    title: row.title,
+    summary: row.summary,
+    detail: row.detail,
+    tags: row.tags ?? [],
+    sourceExcerpt: row.source_excerpt,
+    importance: row.importance,
+    status: row.status as MemoryCandidateStatus,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function mapMemoryItem(row: MemoryItemRow): MemoryItem {
+  return {
+    id: row.id,
+    novelId: row.novel_id,
+    kind: row.kind as MemoryKind,
+    title: row.title,
+    summary: row.summary,
+    detail: row.detail,
+    tags: row.tags ?? [],
+    sourceChapterId: row.source_chapter_id,
+    sourceExcerpt: row.source_excerpt,
+    importance: row.importance,
+    status: row.status as MemoryItemStatus,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 
