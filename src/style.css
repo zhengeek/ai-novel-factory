@@ -1,1 +1,34 @@
 @import "tailwindcss";
+
+.factory-splitpanes.splitpanes--vertical > .splitpanes__splitter {
+  position: relative;
+  width: 8px;
+  flex-shrink: 0;
+  background: #020617;
+  transition: background-color 150ms ease;
+}
+
+.factory-splitpanes.splitpanes--vertical > .splitpanes__splitter::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 48px;
+  content: "";
+  background: #334155;
+  transform: translate(-50%, -50%);
+  transition: background-color 150ms ease;
+}
+
+.factory-splitpanes.splitpanes--vertical > .splitpanes__splitter:hover {
+  background: rgb(34 211 238 / 0.12);
+}
+
+.factory-splitpanes.splitpanes--vertical > .splitpanes__splitter:hover::before {
+  background: #67e8f9;
+}
+
+.factory-splitpanes .splitpanes__pane {
+  min-width: 0;
+  overflow: hidden;
+}
