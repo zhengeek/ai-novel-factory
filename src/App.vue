@@ -726,7 +726,22 @@ function debounceSave(key: string, action: () => Promise<void>): void {
 }
 
 function setWorkspaceError(error: unknown, fallback: string): void {
-  workspaceError.value = error instanceof Error ? error.message : fallback
+  workspaceError.value = formatWorkspaceError(error, fallback)
+}
+
+function formatWorkspaceError(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  if (!error || typeof error !== 'object') return fallback
+
+  const record = error as Record<string, unknown>
+  const message = typeof record.message === 'string' ? record.message.trim() : ''
+  const details = typeof record.details === 'string' ? record.details.trim() : ''
+  const hint = typeof record.hint === 'string' ? record.hint.trim() : ''
+  const code = typeof record.code === 'string' ? record.code.trim() : ''
+  const parts = [message, details, hint, code ? `Code: ${code}` : ''].filter(Boolean)
+
+  return parts.length ? `${fallback} ${parts.join(' ')}` : fallback
 }
 </script>
 
@@ -760,7 +775,14 @@ function setWorkspaceError(error: unknown, fallback: string): void {
 
       <div v-if="workspaceError" class="grid min-w-0 flex-1 place-items-center bg-slate-900 p-8">
         <div class="max-w-lg border border-rose-400/30 bg-rose-400/10 p-4 text-sm leading-6 text-rose-100">
-          {{ workspaceError }}
+          <p>{{ workspaceError }}</p>
+          <button
+            class="mt-4 h-9 border border-rose-300/40 px-3 text-xs font-semibold text-rose-100 transition hover:bg-rose-300/10"
+            type="button"
+            @click="loadCloudWorkspaceOnce"
+          >
+            重试加载
+          </button>
         </div>
       </div>
 
