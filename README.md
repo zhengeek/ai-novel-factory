@@ -26,7 +26,7 @@ VITE_SUPABASE_ANON_KEY=你的 Supabase anon key
 supabase/migrations/202605200001_phase2_schema.sql
 ```
 
-当前登录方式为邮箱 Magic Link。用户登录后，前端通过 Supabase RLS 只读写自己的数据。
+当前登录方式以邮箱密码为主，并保留 Magic Link 作为旧账号或密码异常时的兜底入口。用户登录后，前端通过 Supabase RLS 只读写自己的数据。
 
 如果浏览器里已有 Phase 1 的 `localStorage` 小说数据，首次登录后会自动追加导入云端；整批导入成功后会写入 `ai-novel-factory:local-imported=true`，避免重复导入。旧人物卡里的 `role` 会兼容迁移为“身份与背景”。
 
