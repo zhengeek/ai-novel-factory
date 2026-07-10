@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { BookOpen, ChevronsLeft, ChevronsRight, Factory, Plus, Trash2 } from 'lucide-vue-next'
+import { BookOpen, ChevronsLeft, ChevronsRight, Factory, LogOut, Plus, Trash2 } from 'lucide-vue-next'
 import type { NovelProject } from '../types/novel'
 
 defineProps<{
   novels: NovelProject[]
   activeNovelId: string
   collapsed: boolean
+  userEmail: string
 }>()
 
 const emit = defineEmits<{
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   renameNovel: [id: string, title: string]
   deleteNovel: [id: string]
   toggleSidebar: []
+  signOut: []
 }>()
 </script>
 
@@ -82,6 +84,17 @@ const emit = defineEmits<{
     </nav>
 
     <div class="border-t border-slate-800 p-3">
+      <div v-if="!collapsed" class="mb-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+        <span class="min-w-0 truncate">{{ userEmail }}</span>
+        <button
+          class="grid h-7 w-7 shrink-0 place-items-center border border-slate-800 text-slate-500 transition hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
+          type="button"
+          title="退出登录"
+          @click="emit('signOut')"
+        >
+          <LogOut class="h-3.5 w-3.5" />
+        </button>
+      </div>
       <button
         class="flex h-11 w-full items-center justify-center gap-2 border border-dashed border-slate-700 text-sm font-medium text-slate-300 transition hover:border-cyan-400/50 hover:bg-cyan-400/10 hover:text-cyan-100"
         type="button"

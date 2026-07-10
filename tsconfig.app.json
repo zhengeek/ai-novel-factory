@@ -3,6 +3,12 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vite/client"],
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "splitpanes": ["src/vendor/splitpanes.ts"],
+      "splitpanes/dist/splitpanes.css": ["src/vendor/splitpanes.css"]
+    },
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true

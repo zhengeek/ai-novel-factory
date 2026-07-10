@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "latest",
     "lucide-vue-next": "latest",
+    "splitpanes": "latest",
     "vue": "latest"
   },
   "devDependencies": {
